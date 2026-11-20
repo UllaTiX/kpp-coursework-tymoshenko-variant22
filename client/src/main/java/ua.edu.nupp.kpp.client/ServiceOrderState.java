@@ -1,9 +1,8 @@
 package ua.edu.nupp.kpp.client;
 
 public enum ServiceOrderState {
-    NEW,
-    CREATED,
-    DIAGNOSED,
-    IN_PROGRESS,
-    CLOSED
+    CREATED,      // СТВОРЕНО
+    DIAGNOSED,    // ДІАГНОСТОВАНО
+    IN_PROGRESS,  // РЕМОНТ (В роботі)
+    CLOSED        // ВИКОНАНО (Закрито)
 }
