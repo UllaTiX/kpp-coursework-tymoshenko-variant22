@@ -13,6 +13,8 @@ import javafx.stage.Stage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import javafx.concurrent.Task;
+import java.util.logging.Logger;
 
 import java.util.List;
 
@@ -24,6 +26,7 @@ public class MainApp extends Application {
     private final TableView<Car> carTable = new TableView<>();
     private final TableView<ServiceOrder> orderTable = new TableView<>();
     private final TableView<WorkItem> workItemTable = new TableView<>();
+    private static final Logger LOG = Logger.getLogger(MainApp.class.getName());
 
     private final TextField clientNameField = new TextField();
     private final TextField clientPhoneField = new TextField();
@@ -102,6 +105,24 @@ public class MainApp extends Application {
             }
         });
 
+        updateBtn.setOnAction(e -> {
+            if (selectedClientId == null) {
+                showError(new RuntimeException("Оберіть запис для зміни"));
+                return;
+            }
+            try {
+                api.updateClient(
+                        selectedClientId,
+                        clientNameField.getText(),
+                        clientPhoneField.getText()
+                );
+                refreshClients();
+                clearClientForm();
+            } catch (Exception ex) {
+                showError(ex);
+            }
+        });
+
         deleteBtn.setOnAction(ev -> {
             if (selectedClientId == null) {
                 showError(new RuntimeException("Виберіть запис для видалення"));
@@ -145,7 +166,60 @@ public class MainApp extends Application {
         Button refreshBtn = new Button("Оновити");
         refreshBtn.setOnAction(e -> refreshCars());
 
-        VBox layout = new VBox(10, carTable, refreshBtn);
+        Button importCsvBtn = new Button("Імпортувати CSV");
+        ProgressBar importProgressBar = new ProgressBar(0);
+        importProgressBar.setPrefWidth(200);
+        Label importStatusLabel = new Label("CSV не імпортовано");
+
+        importCsvBtn.setOnAction(e -> {
+            ImportCarsTask task = new ImportCarsTask(Path.of("sample-data", "cars.csv"), api);
+
+            importProgressBar.progressProperty().bind(task.progressProperty());
+            importStatusLabel.textProperty().bind(task.messageProperty());
+            importCsvBtn.disableProperty().bind(task.runningProperty());
+
+            task.setOnSucceeded(ev -> {
+                importProgressBar.progressProperty().unbind();
+                importStatusLabel.textProperty().unbind();
+                importCsvBtn.disableProperty().unbind();
+
+                int addedCount = task.getValue();
+                importStatusLabel.setText("Готово. Додано записів: " + addedCount);
+                refreshCars();
+            });
+
+            task.setOnFailed(ev -> {
+                importProgressBar.progressProperty().unbind();
+                importStatusLabel.textProperty().unbind();
+                importCsvBtn.disableProperty().unbind();
+
+                Throwable ex = task.getException();
+                LOG.severe("Помилка під час фонового CSV-імпорту: " + (ex != null ? ex.getMessage() : "невідома помилка"));
+                importStatusLabel.setText("Помилка імпорту");
+                if (ex instanceof Exception) {
+                    showError((Exception) ex);
+                } else {
+                    showError(new Exception(ex != null ? ex.getMessage() : "Помилка імпорту"));
+                }
+            });
+
+            task.setOnCancelled(ev -> {
+                importProgressBar.progressProperty().unbind();
+                importStatusLabel.textProperty().unbind();
+                importCsvBtn.disableProperty().unbind();
+
+                importStatusLabel.setText("Імпорт скасовано (частина записів могла бути збережена)");
+            });
+
+            Thread worker = new Thread(task, "import-cars-task");
+            worker.setDaemon(true);
+            worker.start();
+        });
+
+        HBox buttonsBox = new HBox(10, refreshBtn, importCsvBtn);
+        HBox progressBox = new HBox(10, importProgressBar, importStatusLabel);
+
+        VBox layout = new VBox(10, carTable, buttonsBox, progressBox);
         layout.setPadding(new Insets(10));
         return layout;
     }
@@ -246,49 +320,12 @@ public class MainApp extends Application {
         selectedClientId = null;
     }
 
-
-
     private void showError(Exception e) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle("Помилка");
         alert.setHeaderText("Сталася помилка під час виконання операції");
         alert.setContentText(e.getMessage());
         alert.showAndWait();
-    }
-
-    private void importCarsFromCsv() {
-        try {
-            Path file = Path.of("sample-data", "cars.csv");
-            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-
-            if (lines.isEmpty()) {
-                return;
-            }
-
-            for (int i = 1; i < lines.size(); i++) {
-                String line = lines.get(i);
-                if (line.isBlank()) continue;
-
-                String[] parts = line.split(";");
-                if (parts.length < 6) {
-                    throw new IllegalArgumentException("Некоректна кількість стовпців у рядку: " + parts.length);
-                }
-
-                String licensePlate = parts[0].trim();
-                String brand = parts[1].trim();
-                String model = parts[2].trim();
-                int year = Integer.parseInt(parts[3].trim());
-                String clientName = parts[4].trim();
-                String clientPhone = parts[5].trim();
-
-                new HttpAutoServiceClient().addCar(licensePlate, brand, model, year, clientName, clientPhone);
-            }
-
-            refreshAll();
-            System.out.println("Імпорт автомобілів з CSV успішно виконано!");
-        } catch (Exception e) {
-            showError(e);
-        }
     }
 
     public static void main(String[] args) {

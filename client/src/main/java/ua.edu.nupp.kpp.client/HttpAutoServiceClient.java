@@ -23,16 +23,15 @@ public class HttpAutoServiceClient {
         this.mapper = new ObjectMapper();
     }
 
-    public void addCar(String licensePlate, String brand, String model, int year, String clientName, String clientPhone) throws Exception {
+    public void addCar(long clientId, String vin, String brand, String model, int year) throws Exception {
         Map<String, String> params = new HashMap<>();
-        params.put("licensePlate", licensePlate);
+        params.put("action", "add");
+        params.put("clientId", String.valueOf(clientId));
+        params.put("vin", vin);
         params.put("brand", brand);
         params.put("model", model);
         params.put("year", String.valueOf(year));
-        params.put("clientName", clientName);
-        params.put("clientPhone", clientPhone);
-
-        send("/car", params);
+        send("/cars", params);
     }
 
     private String encode(String value) {
@@ -106,6 +105,16 @@ public class HttpAutoServiceClient {
                 "name", name,
                 "phone", phone,
                 "email", email
+        );
+        send("/clients", params);
+    }
+    // --- Заміна клієнта ---
+    public void updateClient(Long id, String name, String phone) throws Exception {
+        Map<String, String> params = Map.of(
+                "action", "update",
+                "id", String.valueOf(id),
+                "name", name,
+                "phone", phone
         );
         send("/clients", params);
     }
